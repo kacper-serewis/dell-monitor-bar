@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
+@MainActor
 enum Main {
     static func main() async {
         if CommandLine.arguments.contains("--verify-brightness") {
@@ -34,6 +35,7 @@ enum Main {
     }
 }
 
+@MainActor
 struct MonitorBarApp: App {
     @StateObject private var model = AppModel()
     var body: some Scene {
