@@ -60,7 +60,7 @@ struct PanelView: View {
                     Button("About Dell Monitor Bar") {
                         NSApp.orderFrontStandardAboutPanel(options: [
                             .applicationName: "Dell Monitor Bar",
-                            .applicationVersion: "0.1.0",
+                            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development",
                             .credits: NSAttributedString(string: "Open-source monitor controls for Apple Silicon.\nKVM support is experimental.\nNot affiliated with Dell.")
                         ])
                         NSApp.activate(ignoringOtherApps: true)
@@ -103,15 +103,13 @@ private struct MonitorCard: View {
             }
             if let brightness = monitor.brightness, brightness.maximum > 0, brightness.current <= brightness.maximum {
                 LevelSlider(title: "Brightness", symbol: "sun.max", reading: brightness,
-                            disabled: model.isBusy, monitorName: monitor.name) {
-                    model.setLevel(monitor, code: 0x10, value: $0)
-                }
+                            monitorName: monitor.name, value: levelBinding(code: 0x10, reading: brightness),
+                            editingChanged: { model.editLevel(monitor, code: 0x10, editing: $0) })
             }
             if let contrast = monitor.contrast, contrast.maximum > 0, contrast.current <= contrast.maximum {
                 LevelSlider(title: "Contrast", symbol: "circle.lefthalf.filled", reading: contrast,
-                            disabled: model.isBusy, monitorName: monitor.name) {
-                    model.setLevel(monitor, code: 0x12, value: $0)
-                }
+                            monitorName: monitor.name, value: levelBinding(code: 0x12, reading: contrast),
+                            editingChanged: { model.editLevel(monitor, code: 0x12, editing: $0) })
             }
             if let caps = monitor.capabilities, !caps.inputs.isEmpty {
                 HStack {
@@ -154,27 +152,22 @@ private struct MonitorCard: View {
         .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(.primary.opacity(0.07), lineWidth: 1))
     }
+
+    private func levelBinding(code: UInt8, reading: VCPValue) -> Binding<Double> {
+        Binding(
+            get: { model.displayedLevel(monitor, code: code, reading: reading) },
+            set: { model.updateLevel(monitor, code: code, value: $0, maximum: reading.maximum) }
+        )
+    }
 }
 
 private struct LevelSlider: View {
     let title: String
     let symbol: String
     let reading: VCPValue
-    let disabled: Bool
     let monitorName: String
-    let commit: (UInt16) -> Void
-    @State private var value: Double
-
-    init(title: String, symbol: String, reading: VCPValue, disabled: Bool, monitorName: String,
-         commit: @escaping (UInt16) -> Void) {
-        self.title = title
-        self.symbol = symbol
-        self.reading = reading
-        self.disabled = disabled
-        self.monitorName = monitorName
-        self.commit = commit
-        _value = State(initialValue: Double(reading.current))
-    }
+    @Binding var value: Double
+    let editingChanged: (Bool) -> Void
 
     var body: some View {
         VStack(spacing: 4) {
@@ -184,12 +177,8 @@ private struct LevelSlider: View {
                 Text("\(Int((value / Double(reading.maximum) * 100).rounded()))%")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            Slider(value: $value, in: 0...Double(reading.maximum)) { editing in
-                if !editing && UInt16(value.rounded()) != reading.current { commit(UInt16(value.rounded())) }
-            }.disabled(disabled).accessibilityLabel("\(monitorName) \(title.lowercased())")
+            Slider(value: $value, in: 0...Double(reading.maximum), onEditingChanged: editingChanged)
+                .accessibilityLabel("\(monitorName) \(title.lowercased())")
         }
-        .onChange(of: reading) { value = Double($0.current) }
-        // A rejected write can leave the same reading as before; reset on completion too.
-        .onChange(of: disabled) { if !$0 { value = Double(reading.current) } }
     }
 }

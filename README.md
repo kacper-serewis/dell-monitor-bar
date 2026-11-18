@@ -28,6 +28,8 @@ are not required.
 
 - Separate brightness and contrast sliders for each detected Dell monitor.
   Changes are sent when you finish dragging, then read back from the hardware.
+  Sliders stay responsive during hardware I/O; newer adjustments replace queued
+  values, and delayed replies never overwrite an active drag.
 - An input menu populated from that monitor's advertised inputs. The P2725QE
   and U2723QE expose USB-C, DisplayPort and HDMI.
 - **Switch USB host** on monitors advertising Dell's USB KVM control. The

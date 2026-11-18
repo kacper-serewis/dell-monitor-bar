@@ -21,8 +21,15 @@ private final class NativeTransport: DDCTransport {
     }
 }
 
+protocol MonitorServing: Actor {
+    func scan(forceCapabilities: Bool) async -> [MonitorState]
+    func level(_ id: String, code: UInt8, value: UInt16) async throws -> VCPValue
+    func input(_ id: String, value: UInt8) async throws
+    func switchUSB(_ id: String) async throws
+}
+
 /// All I/O is serialized off the main actor, including discovery and hotplug.
-actor MonitorBackend {
+actor MonitorBackend: MonitorServing {
     private var sessions: [String: DDCSession] = [:]
     private var capabilities: [String: Capabilities] = [:]
 

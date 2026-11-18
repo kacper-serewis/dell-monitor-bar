@@ -10,12 +10,14 @@ final class AppModel: ObservableObject {
     @Published var message: String?
     @Published var messageIsError = false
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
-    let backend = MonitorBackend()
+    @Published private(set) var levelAdjustments = LevelAdjustments()
+    let backend: any MonitorServing
     private var subscriptions = Set<AnyCancellable>()
     private var pendingRefresh = false
     private var pendingCapabilities = false
 
-    init(automaticallyRefresh: Bool = true) {
+    init(automaticallyRefresh: Bool = true, backend: any MonitorServing = MonitorBackend()) {
+        self.backend = backend
         guard automaticallyRefresh else { return }
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .debounce(for: .seconds(2), scheduler: RunLoop.main)
@@ -30,6 +32,7 @@ final class AppModel: ObservableObject {
 
     private func finished() {
         isBusy = false
+        if startNextLevelWrite() { return }
         if pendingRefresh {
             let force = pendingCapabilities
             pendingRefresh = false
@@ -47,28 +50,46 @@ final class AppModel: ObservableObject {
         isBusy = true
         Task {
             monitors = await backend.scan(forceCapabilities: forceCapabilities)
+            levelAdjustments.retainMonitors(Set(monitors.map(\.id)))
             finished()
         }
     }
 
-    func setLevel(_ monitor: MonitorState, code: UInt8, value: UInt16) {
-        guard !isBusy else { return }
+    func displayedLevel(_ monitor: MonitorState, code: UInt8, reading: VCPValue) -> Double {
+        levelAdjustments.value(for: LevelControlID(monitorID: monitor.id, code: code), confirmed: reading.current)
+    }
+
+    func updateLevel(_ monitor: MonitorState, code: UInt8, value: Double, maximum: UInt16) {
+        levelAdjustments.update(LevelControlID(monitorID: monitor.id, code: code), value: value, maximum: maximum)
+    }
+
+    func editLevel(_ monitor: MonitorState, code: UInt8, editing: Bool) {
+        levelAdjustments.setEditing(LevelControlID(monitorID: monitor.id, code: code), editing)
+        if !editing { startNextLevelWrite() }
+    }
+
+    @discardableResult private func startNextLevelWrite() -> Bool {
+        guard !isBusy, let write = levelAdjustments.next() else { return false }
         isBusy = true
         message = nil
         Task {
             do {
-                let reading = try await backend.level(monitor.id, code: code, value: value)
-                if let index = monitors.firstIndex(where: { $0.id == monitor.id }) {
-                    if code == 0x10 { monitors[index].brightness = reading }
+                let reading = try await backend.level(write.control.monitorID, code: write.control.code, value: write.value)
+                if let index = monitors.firstIndex(where: { $0.id == write.control.monitorID }) {
+                    if write.control.code == 0x10 { monitors[index].brightness = reading }
                     else { monitors[index].contrast = reading }
                 }
             } catch {
                 showError(error)
                 // Restore the displayed value from the device after a rejected write.
-                monitors = await backend.scan()
+                monitors = await backend.scan(forceCapabilities: false)
             }
+            // Publish confirmed readback first, then clear only this request's
+            // draft. A newer drag remains visible even if this write failed.
+            levelAdjustments.complete(write)
             finished()
         }
+        return true
     }
 
     func setInput(_ monitor: MonitorState, input: UInt8) {

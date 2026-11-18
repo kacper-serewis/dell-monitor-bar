@@ -10,6 +10,7 @@ let package = Package(
                 linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("CoreGraphics"), .linkedFramework("CoreDisplay")]),
         .target(name: "MonitorCore"),
         .executableTarget(name: "DellMonitorBar", dependencies: ["DDCBridge", "MonitorCore"]),
-        .testTarget(name: "MonitorCoreTests", dependencies: ["MonitorCore"])
+        .testTarget(name: "MonitorCoreTests", dependencies: ["MonitorCore"]),
+        .testTarget(name: "AppTests", dependencies: ["DellMonitorBar", "MonitorCore"])
     ]
 )
