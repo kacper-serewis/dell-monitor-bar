@@ -1,0 +1,25 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Protocol tests
+        run: swift test
+      - name: Build Apple Silicon app
+        run: ./scripts/build.sh
+      - name: Verify signature and bundle
+        run: |
+          codesign --verify --strict "dist/Dell Monitor Bar.app"
+          plutil -lint "dist/Dell Monitor Bar.app/Contents/Info.plist"
+      - name: Archive
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/Dell Monitor Bar.app" dist/DellMonitorBar-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DellMonitorBar-arm64
+          path: dist/DellMonitorBar-arm64.zip
